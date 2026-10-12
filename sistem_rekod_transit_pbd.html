@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Rekod Transit PBD</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        tp1: '#ef4444', // Red
+                        tp2: '#f97316', // Orange
+                        tp3: '#eab308', // Yellow
+                        tp4: '#3b82f6', // Blue
+                        tp5: '#a855f7', // Purple
+                        tp6: '#22c55e', // Green
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body {
+            background: linear-gradient(135deg, #bfdbfe 0%, #e9d5ff 100%);
+            background-attachment: fixed;
+            min-height: 100vh;
+            color: #1f2937;
+        }
+        
+        .glass {
+            background: rgba(255, 255, 255, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+        }
+
+        .glass-input {
+            background: rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        
+        .glass-input:focus {
+            background: rgba(255, 255, 255, 0.8);
+            outline: none;
+            border-color: #8b5cf6;
+            box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+        }
+
+        /* Print Styles */
+        @media print {
+            body { background: white !important; }
+            .no-print { display: none !important; }
+            .glass { 
+                background: white !important; 
+                backdrop-filter: none !important;
+                box-shadow: none !important;
+                border: 1px solid #e5e7eb !important;
+            }
+            .print-break { page-break-before: always; }
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.3); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        const getTP = (mark) => {
+            if (mark === null || mark === undefined || mark === '') return null;
+            const m = Number(mark);
+            if (m < 20) return 1;
+            if (m < 40) return 2;
+            if (m < 60) return 3;
+            if (m < 75) return 4;
+            if (m < 90) return 5;
+            return 6;
+        };
+
+        const getTPColor = (tp) => {
+            const colors = {
+                1: 'bg-tp1 text-white',
+                2: 'bg-tp2 text-white',
+                3: 'bg-tp3 text-white',
+                4: 'bg-tp4 text-white',
+                5: 'bg-tp5 text-white',
+                6: 'bg-tp6 text-white'
+            };
+            return colors[tp] || 'bg-gray-100 text-gray-400';
+        };
+
+        const getRemarks = (avgTP) => {
+            if (avgTP >= 5) return "Pencapaian yang sangat cemerlang. Mampu mengaplikasi pengetahuan dengan kritis dan kreatif.";
+            if (avgTP >= 4) return "Pencapaian yang baik. Menguasai kemahiran dengan memuaskan.";
+            if (avgTP >= 3) return "Mencapai tahap penguasaan minimum. Perlu lebih latihan untuk mengukuhkan kefahaman.";
+            if (avgTP > 0) return "Memerlukan bimbingan dan intervensi yang berterusan untuk menguasai kemahiran asas.";
+            return "";
+        };
+
+        const BarChart = ({ data, labels }) => {
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+
+            useEffect(() => {
+                if (chartInstance.current) chartInstance.current.destroy();
+                
+                const ctx = chartRef.current.getContext('2d');
+                chartInstance.current = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Bilangan Pelajar',
+                            data: data,
+                            backgroundColor: ['#ef4444', '#f97316', '#eab308', '#3b82f6', '#a855f7', '#22c55e'],
+                            borderRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                    }
+                });
+
+                return () => { if (chartInstance.current) chartInstance.current.destroy(); };
+            }, [data, labels]);
+
+            return <div className="h-64 w-full"><canvas ref={chartRef}></canvas></div>;
+        };
+
+        const RadarChart = ({ data, labels }) => {
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+
+            useEffect(() => {
+                if (chartInstance.current) chartInstance.current.destroy();
+                
+                const ctx = chartRef.current.getContext('2d');
+                chartInstance.current = new Chart(ctx, {
+                    type: 'radar',
+                    data: {
+                        labels: labels.map((l, i) => `T${i+1}`), // Short labels for radar
+                        datasets: [{
+                            label: 'Tahap Penguasaan (TP)',
+                            data: data,
+                            backgroundColor: 'rgba(139, 92, 246, 0.2)',
+                            borderColor: 'rgba(139, 92, 246, 1)',
+                            pointBackgroundColor: 'rgba(139, 92, 246, 1)',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            r: { min: 0, max: 6, ticks: { stepSize: 1 } }
+                        }
+                    }
+                });
+
+                return () => { if (chartInstance.current) chartInstance.current.destroy(); };
+            }, [data, labels]);
+
+            return <div className="h-72 w-full"><canvas ref={chartRef}></canvas></div>;
+        };
+
+        const App = () => {
+            // State initialization
+            const [activeTab, setActiveTab] = useState('dashboard');
+            
+            const defaultData = {
+                subject: 'Sejarah',
+                className: 'Tahun 4',
+                topics: [
+                    '1.1 Understand meaning in a variety of familiar contexts',
+                    '2.1 Communicate information, ideas, opinions and feelings',
+                    '3.1 Understand a variety of texts by using appropriate reading strategies',
+                    '4.1 Communicate intelligibly through print and digital media',
+                    '5.1 Engage with, respond to and interpret a variety of literary text types'
+                ],
+                students: [
+                    { id: 1, name: 'CHRIST PUTRA ELVINE A/L HANAFFIE', marks: { 0: 45, 1: 65, 2: 78, 3: 50, 4: 80 } },
+                    { id: 2, name: 'ALVIRA A/P SANWIN', marks: { 0: 85, 1: 92, 2: 88, 3: 90, 4: 95 } }
+                ],
+                logo: ''
+            };
+
+            const [data, setData] = useState(() => {
+                const saved = localStorage.getItem('pbd_data');
+                return saved ? JSON.parse(saved) : defaultData;
+            });
+
+            useEffect(() => {
+                localStorage.setItem('pbd_data', JSON.stringify(data));
+            }, [data]);
+
+            const updateData = (key, value) => {
+                setData(prev => ({ ...prev, [key]: value }));
+            };
+
+            // Calculate overall stats
+            const stats = useMemo(() => {
+                let totalMarks = 0;
+                let marksCount = 0;
+                let tpDistribution = [0, 0, 0, 0, 0, 0];
+                let intervention = [];
+                let excellent = [];
+
+                data.students.forEach(student => {
+                    let sTotal = 0;
+                    let sCount = 0;
+                    data.topics.forEach((_, idx) => {
+                        if (student.marks[idx] !== undefined && student.marks[idx] !== '') {
+                            sTotal += Number(student.marks[idx]);
+                            sCount++;
+                        }
+                    });
+
+                    if (sCount > 0) {
+                        const sAvgMark = sTotal / sCount;
+                        const sAvgTP = getTP(sAvgMark);
+                        
+                        totalMarks += sTotal;
+                        marksCount += sCount;
+                        
+                        tpDistribution[sAvgTP - 1]++;
+                        
+                        if (sAvgTP <= 2) intervention.push(student);
+                        if (sAvgTP >= 5) excellent.push(student);
+                    }
+                });
+
+                return {
+                    totalStudents: data.students.length,
+                    avgMark: marksCount > 0 ? (totalMarks / marksCount).toFixed(1) : 0,
+                    avgTP: marksCount > 0 ? getTP(totalMarks / marksCount) : 0,
+                    tpDistribution,
+                    intervention,
+                    excellent
+                };
+            }, [data]);
+
+            const renderDashboard = () => (
+                <div className="space-y-6 animate-fade-in">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="glass p-6 rounded-2xl flex flex-col items-center justify-center text-center">
+                            <span className="text-gray-500 font-medium mb-2">Jumlah Pelajar</span>
+                            <span className="text-4xl font-bold text-blue-600">{stats.totalStudents}</span>
+                        </div>
+                        <div className="glass p-6 rounded-2xl flex flex-col items-center justify-center text-center">
+                            <span className="text-gray-500 font-medium mb-2">Purata Markah</span>
+                            <span className="text-4xl font-bold text-purple-600">{stats.avgMark}</span>
+                        </div>
+                        <div className="glass p-6 rounded-2xl flex flex-col items-center justify-center text-center">
+                            <span className="text-gray-500 font-medium mb-2">Purata TP</span>
+                            <span className={`text-4xl font-bold px-4 py-1 rounded-full ${getTPColor(stats.avgTP)}`}>TP {stats.avgTP || '-'}</span>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="glass p-6 rounded-2xl">
+                            <h3 className="font-semibold text-lg mb-4 text-gray-700">Taburan Tahap Penguasaan (TP)</h3>
+                            <BarChart data={stats.tpDistribution} labels={['TP1', 'TP2', 'TP3', 'TP4', 'TP5', 'TP6']} />
+                        </div>
+                        
+                        <div className="space-y-6">
+                            <div className="glass p-6 rounded-2xl border-l-4 border-l-red-500">
+                                <h3 className="font-semibold text-lg mb-4 text-red-600 flex items-center gap-2">Senarai Intervensi (TP1 - TP2)</h3>
+                                <ul className="space-y-2">
+                                    {stats.intervention.length > 0 ? stats.intervention.map(s => <li key={s.id} className="text-sm bg-white/50 p-2 rounded">{s.name}</li>) : <li className="text-sm text-gray-500">Tiada pelajar.</li>}
+                                </ul>
+                            </div>
+                            
+                            <div className="glass p-6 rounded-2xl border-l-4 border-l-green-500">
+                                <h3 className="font-semibold text-lg mb-4 text-green-600 flex items-center gap-2">Senarai Cemerlang (TP5 - TP6)</h3>
+                                <ul className="space-y-2">
+                                    {stats.excellent.length > 0 ? stats.excellent.map(s => <li key={s.id} className="text-sm bg-white/50 p-2 rounded">{s.name}</li>) : <li className="text-sm text-gray-500">Tiada pelajar.</li>}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            const renderRekod = () => {
+                const updateMark = (studentId, topicIdx, value) => {
+                    const newStudents = data.students.map(s => {
+                        if (s.id === studentId) {
+                            return { ...s, marks: { ...s.marks, [topicIdx]: value } };
+                        }
+                        return s;
+                    });
+                    updateData('students', newStudents);
+                };
+
+                const addStudent = () => {
+                    const name = prompt("Sila masukkan nama pelajar baharu:");
+                    if (name) {
+                        const newId = data.students.length > 0 ? Math.max(...data.students.map(s => s.id)) + 1 : 1;
+                        updateData('students', [...data.students, { id: newId, name: name.toUpperCase(), marks: {} }]);
+                    }
+                };
+
+                const deleteStudent = (id) => {
+                    if (confirm("Adakah anda pasti untuk memadam pelajar ini?")) {
+                        updateData('students', data.students.filter(s => s.id !== id));
+                    }
+                };
+
+                return (
+                    <div className="glass rounded-2xl p-6 overflow-hidden flex flex-col space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-xl font-bold text-gray-800">Rekod Transit Markah</h2>
+                            <button onClick={addStudent} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm">
+                                + Tambah Pelajar
+                            </button>
+                        </div>
+                        
+                        <div className="overflow-x-auto rounded-xl border border-white/40">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-white/60 text-gray-700 text-xs uppercase font-semibold">
+                                    <tr>
+                                        <th className="px-4 py-3 whitespace-nowrap">Bil</th>
+                                        <th className="px-4 py-3 min-w-[250px]">Nama Pelajar</th>
+                                        {data.topics.map((t, i) => (
+                                            <th key={i} className="px-4 py-3 text-center min-w-[120px]" title={t}>Topik {i+1}</th>
+                                        ))}
+                                        <th className="px-4 py-3 text-center">Tindakan</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {data.students.map((student, i) => (
+                                        <tr key={student.id} className="border-b border-white/20 hover:bg-white/30 transition-colors">
+                                            <td className="px-4 py-3 text-gray-500 font-medium">{i + 1}</td>
+                                            <td className="px-4 py-3 font-semibold text-gray-800">{student.name}</td>
+                                            {data.topics.map((_, topicIdx) => {
+                                                const mark = student.marks[topicIdx];
+                                                const tp = getTP(mark);
+                                                return (
+                                                    <td key={topicIdx} className="px-4 py-3">
+                                                        <div className="flex flex-col gap-1 items-center">
+                                                            <input 
+                                                                type="number" 
+                                                                min="0" max="100"
+                                                                value={mark !== undefined ? mark : ''}
+                                                                onChange={(e) => updateMark(student.id, topicIdx, e.target.value)}
+                                                                className="w-16 p-1 text-center glass-input rounded-md text-sm font-medium"
+                                                                placeholder="-"
+                                                            />
+                                                            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${getTPColor(tp)} w-full text-center`}>
+                                                                {tp ? `TP ${tp}` : 'TP -'}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                )
+                                            })}
+                                            <td className="px-4 py-3 text-center">
+                                                <button onClick={() => deleteStudent(student.id)} className="text-red-500 hover:text-red-700 p-1 rounded-md hover:bg-red-50 transition-colors" title="Padam">
+                                                    Padam
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderLaporan = () => {
+                const [selectedStudentId, setSelectedStudentId] = useState(data.students[0]?.id || '');
+                const [remarks, setRemarks] = useState('');
+
+                const student = data.students.find(s => s.id === Number(selectedStudentId));
+                
+                // Auto-generate remarks when student changes
+                useEffect(() => {
+                    if (student) {
+                        let total = 0, count = 0;
+                        data.topics.forEach((_, i) => {
+                            if (student.marks[i] !== undefined && student.marks[i] !== '') {
+                                total += Number(student.marks[i]); count++;
+                            }
+                        });
+                        const avgTp = count > 0 ? getTP(total / count) : 0;
+                        setRemarks(getRemarks(avgTp));
+                    }
+                }, [selectedStudentId, student, data.topics]);
+
+                if (!student) return <div className="text-center p-10 text-gray-500">Sila tambah pelajar dahulu.</div>;
+
+                const radarData = data.topics.map((_, i) => getTP(student.marks[i]) || 0);
+
+                return (
+                    <div className="space-y-4">
+                        <div className="no-print glass p-4 rounded-xl flex gap-4 items-center">
+                            <label className="font-semibold text-gray-700">Pilih Pelajar:</label>
+                            <select 
+                                value={selectedStudentId} 
+                                onChange={(e) => setSelectedStudentId(e.target.value)}
+                                className="glass-input p-2 rounded-lg flex-1 cursor-pointer"
+                            >
+                                {data.students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                            <button onClick={() => window.print()} className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-medium shadow-sm transition-colors">
+                                Cetak Laporan
+                            </button>
+                        </div>
+
+                        <div className="glass p-8 rounded-2xl bg-white/70 print:p-0 print:bg-white print:shadow-none print:border-none">
+                            {/* Header */}
+                            <div className="flex items-center gap-6 border-b border-gray-300 pb-6 mb-6">
+                                {data.logo && <img src={data.logo} alt="Logo Sekolah" className="w-24 h-24 object-contain" />}
+                                <div>
+                                    <h1 className="text-2xl font-bold text-gray-900">LAPORAN PRESTASI PBD</h1>
+                                    <div className="grid grid-cols-2 gap-x-8 gap-y-1 mt-2 text-sm text-gray-700">
+                                        <p><span className="font-semibold w-20 inline-block">Nama</span>: {student.name}</p>
+                                        <p><span className="font-semibold w-20 inline-block">Kelas</span>: {data.className}</p>
+                                        <p><span className="font-semibold w-20 inline-block">Subjek</span>: {data.subject}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                <div className="col-span-2 space-y-6">
+                                    <h3 className="font-bold text-gray-800 border-b border-gray-200 pb-2">Perincian Tahap Penguasaan</h3>
+                                    <table className="w-full text-sm border-collapse border border-gray-300">
+                                        <thead className="bg-gray-100">
+                                            <tr>
+                                                <th className="border border-gray-300 p-2 text-left w-16">Topik</th>
+                                                <th className="border border-gray-300 p-2 text-left">Standard Kandungan / DSKP</th>
+                                                <th className="border border-gray-300 p-2 text-center w-20">Markah</th>
+                                                <th className="border border-gray-300 p-2 text-center w-20">TP</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {data.topics.map((t, i) => {
+                                                const mark = student.marks[i];
+                                                const tp = getTP(mark);
+                                                return (
+                                                    <tr key={i}>
+                                                        <td className="border border-gray-300 p-2 text-center font-medium text-gray-500">T{i+1}</td>
+                                                        <td className="border border-gray-300 p-2">{t}</td>
+                                                        <td className="border border-gray-300 p-2 text-center">{mark !== undefined ? mark : '-'}</td>
+                                                        <td className={`border border-gray-300 p-2 text-center font-bold ${tp ? getTPColor(tp) : ''}`}>
+                                                            {tp || '-'}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="col-span-1">
+                                    <h3 className="font-bold text-gray-800 border-b border-gray-200 pb-2 mb-4 text-center">Graf Radar Prestasi</h3>
+                                    <RadarChart data={radarData} labels={data.topics} />
+                                </div>
+                            </div>
+
+                            <div className="mt-8 space-y-2">
+                                <h3 className="font-bold text-gray-800">Ulasan Guru:</h3>
+                                <textarea 
+                                    className="w-full p-4 glass-input rounded-xl text-sm min-h-[100px] resize-y print:border-gray-300 print:bg-transparent"
+                                    value={remarks}
+                                    onChange={(e) => setRemarks(e.target.value)}
+                                ></textarea>
+                            </div>
+
+                            <div className="mt-12 flex justify-between items-end text-sm">
+                                <div className="text-center w-48">
+                                    <div className="border-b border-gray-500 mb-2 h-12"></div>
+                                    <p className="font-semibold">Tandatangan Guru</p>
+                                    <p className="text-gray-500">Tarikh: ...........................</p>
+                                </div>
+                                <div className="text-center w-48">
+                                    <div className="border-b border-gray-500 mb-2 h-12"></div>
+                                    <p className="font-semibold">Tandatangan Ibu Bapa</p>
+                                    <p className="text-gray-500">Tarikh: ...........................</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderTetapan = () => {
+                const handleLogoUpload = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => updateData('logo', reader.result);
+                        reader.readAsDataURL(file);
+                    }
+                };
+
+                const exportData = () => {
+                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+                    const dlAnchorElem = document.createElement('a');
+                    dlAnchorElem.setAttribute("href", dataStr);
+                    dlAnchorElem.setAttribute("download", `PBD_Backup_${new Date().toISOString().slice(0,10)}.json`);
+                    dlAnchorElem.click();
+                };
+
+                const importData = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            try {
+                                const parsed = JSON.parse(event.target.result);
+                                setData(parsed);
+                                alert("Data berjaya dimuat naik!");
+                            } catch (error) {
+                                alert("Ralat membaca fail JSON.");
+                            }
+                        };
+                        reader.readAsText(file);
+                    }
+                };
+
+                return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="glass p-6 rounded-2xl space-y-6">
+                            <h2 className="text-xl font-bold text-gray-800 border-b border-white/30 pb-2">Maklumat Asas</h2>
+                            
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">Logo Sekolah</label>
+                                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 cursor-pointer" />
+                                    {data.logo && <img src={data.logo} alt="Logo" className="mt-4 h-16 w-auto object-contain rounded bg-white/50 p-1" />}
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">Mata Pelajaran</label>
+                                    <input type="text" value={data.subject} onChange={(e) => updateData('subject', e.target.value)} className="w-full glass-input p-2 rounded-lg" />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">Nama Kelas</label>
+                                    <input type="text" value={data.className} onChange={(e) => updateData('className', e.target.value)} className="w-full glass-input p-2 rounded-lg" />
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-white/30 space-y-4">
+                                <h2 className="text-xl font-bold text-gray-800">Sandaran Data (Backup)</h2>
+                                <div className="flex gap-4">
+                                    <button onClick={exportData} className="flex-1 bg-gray-800 hover:bg-gray-900 text-white py-2 rounded-lg font-medium transition-colors">Eksport JSON</button>
+                                    <label className="flex-1 bg-white hover:bg-gray-50 text-gray-800 border border-gray-300 py-2 rounded-lg font-medium transition-colors cursor-pointer text-center">
+                                        Import JSON
+                                        <input type="file" accept=".json" onChange={importData} className="hidden" />
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="glass p-6 rounded-2xl">
+                            <h2 className="text-xl font-bold text-gray-800 border-b border-white/30 pb-2 mb-4">Pengurusan Topik DSKP</h2>
+                            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                                {data.topics.map((topic, i) => (
+                                    <div key={i} className="flex gap-2">
+                                        <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-2 rounded flex-shrink-0">T{i+1}</span>
+                                        <input 
+                                            type="text" 
+                                            value={topic}
+                                            onChange={(e) => {
+                                                const newTopics = [...data.topics];
+                                                newTopics[i] = e.target.value;
+                                                updateData('topics', newTopics);
+                                            }}
+                                            className="flex-1 glass-input p-2 rounded-lg text-sm"
+                                        />
+                                        <button 
+                                            onClick={() => {
+                                                const newTopics = data.topics.filter((_, idx) => idx !== i);
+                                                // Remove marks for this topic for all students
+                                                const newStudents = data.students.map(s => {
+                                                    const newMarks = {};
+                                                    Object.keys(s.marks).forEach(key => {
+                                                        const k = Number(key);
+                                                        if (k < i) newMarks[k] = s.marks[k];
+                                                        if (k > i) newMarks[k - 1] = s.marks[k];
+                                                    });
+                                                    return { ...s, marks: newMarks };
+                                                });
+                                                setData({ ...data, topics: newTopics, students: newStudents });
+                                            }}
+                                            className="bg-red-100 hover:bg-red-200 text-red-600 px-3 py-2 rounded-lg transition-colors"
+                                            title="Padam Topik"
+                                        >✕</button>
+                                    </div>
+                                ))}
+                            </div>
+                            <button 
+                                onClick={() => updateData('topics', [...data.topics, 'Topik Baharu'])}
+                                className="mt-4 w-full border-2 border-dashed border-gray-400 text-gray-600 hover:border-blue-500 hover:text-blue-500 py-3 rounded-xl font-medium transition-colors"
+                            >
+                                + Tambah Topik Baru
+                            </button>
+                        </div>
+                    </div>
+                );
+            };
+
+            const tabs = [
+                { id: 'dashboard', label: '📊 Dashboard' },
+                { id: 'rekod', label: '📝 Rekod Transit' },
+                { id: 'laporan', label: '🖨️ Laporan Individu' },
+                { id: 'tetapan', label: '⚙️ Tetapan' }
+            ];
+
+            return (
+                <div className="min-h-screen p-4 md:p-8 font-sans">
+                    <div className="max-w-7xl mx-auto space-y-6">
+                        
+                        {/* Header */}
+                        <header className="no-print glass rounded-2xl p-6 flex flex-col md:flex-row justify-between items-center gap-4">
+                            <div className="flex items-center gap-4">
+                                {data.logo ? <img src={data.logo} alt="Logo" className="h-12 w-12 object-cover rounded-full bg-white shadow-sm" /> : <div className="h-12 w-12 bg-gradient-to-tr from-purple-500 to-blue-500 rounded-full shadow-sm flex items-center justify-center text-white font-bold text-xl">PBD</div>}
+                                <div>
+                                    <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Sistem Rekod Transit PBD</h1>
+                                    <p className="text-gray-600 text-sm">{data.subject} • {data.className}</p>
+                                </div>
+                            </div>
+                            <div className="flex gap-2 bg-white/30 p-1.5 rounded-xl border border-white/50 overflow-x-auto w-full md:w-auto">
+                                {tabs.map(tab => (
+                                    <button 
+                                        key={tab.id}
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:bg-white/50'}`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </header>
+
+                        {/* Content Area */}
+                        <main>
+                            {activeTab === 'dashboard' && renderDashboard()}
+                            {activeTab === 'rekod' && renderRekod()}
+                            {activeTab === 'laporan' && renderLaporan()}
+                            {activeTab === 'tetapan' && renderTetapan()}
+                        </main>
+
+                        <footer className="no-print text-center text-sm text-gray-500 py-6">
+                            &copy; {new Date().getFullYear()} Sistem Rekod Transit PBD. Data disimpan secara tempatan (Local Storage).
+                        </footer>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
